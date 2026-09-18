@@ -1,0 +1,235 @@
+YOUTUBE AUTOMATION – AUDIO SPEED + TRIMMING + RENDER LENGTH DEBUG
+
+CRITICAL ISSUE:
+Manual narration duration = 37 seconds
+Rendered video duration = 30 seconds
+
+This confirms:
+Audio is either being sped up OR cut during render.
+
+We must perform deep pipeline inspection.
+
+DO NOT APPLY RANDOM FIXES.
+DO NOT GUESS.
+ANALYZE EACH STAGE.
+
+====================================================
+PART 1 – AZURE TTS INVESTIGATION
+====================================================
+
+STEP 1:
+Inspect Azure TTS request payload.
+
+Find the exact code that generates speech.
+Check for:
+
+- speech rate
+- prosody rate
+- tempo
+- speakingRate
+- SSML <prosody rate="">
+- styleDegree
+- rate percentage
+
+Example to check:
+
+<prosody rate="1.0">
+or
+<prosody rate="0%">
+or
+<prosody rate="+10%">
+
+Log the full SSML being sent to Azure.
+
+Confirm:
+No rate attribute is modifying speed.
+
+----------------------------------------------------
+
+STEP 2:
+After Azure generates audio file:
+
+Log:
+
+- Raw file duration using ffprobe
+- File sample rate
+- Channels
+- Bitrate
+
+Command to log:
+
+ffprobe -i file.mp3 -hide_banner
+
+Confirm:
+The generated MP3 duration matches manual playback duration (37s).
+
+====================================================
+PART 2 – RENDER PIPELINE VERIFICATION
+====================================================
+
+STEP 3:
+Before passing audio to Remotion:
+
+Log:
+- audioDurationSeconds (from ffprobe)
+- totalFrames assigned to composition
+- composition durationInFrames
+- fps
+
+Check:
+
+compositionDurationSeconds =
+    durationInFrames / fps
+
+This must equal audioDurationSeconds.
+
+If not:
+Composition is shorter than audio.
+That is trimming.
+
+----------------------------------------------------
+
+STEP 4:
+Inspect Remotion <Audio> component usage.
+
+Confirm:
+
+<Audio
+  src={audioSrc}
+  playbackRate={1}
+/>
+
+If playbackRate is not specified,
+explicitly set playbackRate={1}.
+
+Also confirm:
+No startFrom / endAt props are set.
+
+----------------------------------------------------
+
+STEP 5:
+Inspect FFmpeg render stage.
+
+Search for:
+
+- atempo
+- setpts
+- -filter:a
+- -shortest flag
+
+If -shortest is used,
+it may be cutting audio to match shorter video.
+
+If video durationInFrames is shorter than audio,
+audio will be truncated.
+
+----------------------------------------------------
+
+STEP 6:
+Verify final rendered file duration.
+
+After render completes:
+
+ffprobe final_video.mp4
+
+Compare:
+
+- final video duration
+- original narration duration
+
+Report exact numbers.
+
+====================================================
+PART 3 – TEMPORARY SPEED TEST
+====================================================
+
+If audio duration in final render is shorter than original:
+
+Temporarily apply playbackRate = 0.95
+
+In Remotion:
+
+<Audio
+  src={audioSrc}
+  playbackRate={0.95}
+/>
+
+Re-render and compare duration.
+
+If duration now matches original 37s,
+then frame calculation mismatch is confirmed.
+
+====================================================
+PART 4 – SCENE OVERLAP DEBUG
+====================================================
+
+Log for each scene:
+
+{
+  scene_index,
+  scene_audio_duration_ms,
+  scene_duration_frames,
+  startFrame,
+  endFrame
+}
+
+Then compute:
+
+sum(scene_duration_frames) / fps
+
+Compare to totalAudioDurationSeconds.
+
+If smaller → trimming exists.
+
+====================================================
+PART 5 – FRONTEND VIDEO PLAYBACK ISSUE (STILL BROKEN)
+====================================================
+
+Investigate:
+
+In browser dev tools:
+
+Network tab:
+- What URL is requested?
+- What status code returned?
+- What Content-Type?
+- What actual resolved URL?
+
+Log absoluteVideoUrl before passing to <video>.
+
+Temporarily hardcode:
+
+src="/videos/test.mp4"
+
+If it plays → URL building is broken.
+If not → static serving is broken.
+
+Also confirm:
+
+Next.js public folder structure:
+
+public/videos/file.mp4
+
+Accessible directly via:
+
+http://localhost:3000/videos/file.mp4
+
+====================================================
+EXPECTED OUTPUT
+====================================================
+
+Return structured report:
+
+1. Azure TTS rate settings
+2. Raw audio duration (actual seconds)
+3. Composition duration (seconds)
+4. Final MP4 duration (seconds)
+5. Exact point where time is lost
+6. Whether playbackRate test fixed duration
+7. Exact frontend URL requested
+8. HTTP status of video request
+
+DO NOT FIX YET.
+Only report numbers.
+
+END DEBUG.

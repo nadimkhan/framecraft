@@ -1,0 +1,15 @@
+{
+  "name": "windows-renderer",
+  "version": "1.0.0",
+  "description": "GPU Video Renderer for Windows",
+  "main": "render-gpu.js",
+  "scripts": {
+    "render": "node render-gpu.js"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.427",
+    "@remotion/renderer": "^4.0.427",
+    "remotion": "^4.0.427"
+  },
+  "notes": "FFmpeg is REQUIRED on Windows. Install from: https://ffmpeg.org/download.html"
+}

@@ -1,0 +1,365 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ContentMode {
+  single
+  series
+  long_form
+  calendar
+}
+
+enum PipelineStage {
+  draft
+  script
+  images
+  voiceover
+  render
+  review
+  uploaded
+}
+
+enum GenerationStatus {
+  generating
+  ready
+  failed
+}
+
+enum UploadStatus {
+  new
+  uploaded
+}
+
+enum VideoAspectRatio {
+  portrait // 9:16 (Shorts)
+  landscape // 16:9 (Long form)
+}
+
+enum SocialPlatform {
+  youtube
+  twitter
+  instagram
+  tiktok
+}
+
+enum SocialAccountStatus {
+  pending
+  connected
+  error
+}
+
+enum VideoDurationBucket {
+  short_30_40 // 30-40 seconds
+  short_50_60 // 50-60 seconds
+  long_60_120 // 60s-2min (for long-form)
+  long_120_300 // 2-5min (for long-form)
+}
+
+// Global channel configuration — single row
+model ChannelConfig {
+  id                      String              @id @default(uuid())
+  // ── Niche scoping ──
+  // Per-niche channel config. The user can have multiple niches, each with its own
+  // YouTube channel + Instagram account + voice + art style + music + effects.
+  // NULL id means "global default" (used when a series isn't tied to a niche).
+  nicheId                 Int?
+  // ── Selection ──
+  artStyleId              Int?
+  voiceStyleId            Int?
+  artStyle                ArtStyle?           @relation(fields: [artStyleId], references: [id])
+  voiceStyle              VoiceStyle?         @relation(fields: [voiceStyleId], references: [id])
+  // Multiple music tracks: when >1 is selected, the app picks one at random per video.
+  backgroundMusicIds      Int[]               @default([])
+  customMusicPaths        String[]            @default([])
+  effectIds               Int[]               @default([])
+  // ── Social accounts (per-niche) ──
+  // Linked via SocialAccount relation. Multiple accounts per platform can be
+  // linked; the user picks one when publishing.
+  socialAccounts          SocialAccount[]
+  // ── Content settings ──
+  contentMode             ContentMode         @default(single)
+  videoDuration           VideoDurationBucket @default(short_30_40)
+  videosPerDay            Int                 @default(1)
+  publishTimes            String[]            @default([])
+  // ── Onboarding ──
+  onboardingCompleted     Boolean             @default(false)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@unique([nicheId])
+  @@index([nicheId])
+}
+
+model Niche {
+  // The niche category — Horror, Comedy, Finance, Gaming, Motivation, etc.
+  // Used as a TEMPLATE: multiple Series can share one Niche's config defaults.
+  id                  Int      @id @default(autoincrement())
+  category            String   @unique // "Horror", "Comedy", "Finance / Crypto", etc.
+  slug                String   @unique
+  description         String?
+  // Default config to seed a new Series under this Niche
+  defaultArtStyleId   Int?
+  defaultVoiceStyleId Int?
+  defaultMusicIds     Int[]    @default([])
+  defaultEffectIds    Int[]    @default([])
+  series              Series[]
+
+  @@index([slug])
+}
+
+model Series {
+  // A YouTube channel / content series (e.g. "Horror Short Stories", "Horror Storytime").
+  // Each series has its own niche, topics, videos, YouTube/IG accounts, and settings.
+  id                      String       @id @default(cuid())
+  seriesName              String       @unique
+  slug                    String       @unique
+  description             String?
+  // Which Niche template this series uses
+  nicheId                 Int
+  niche                   Niche        @relation(fields: [nicheId], references: [id])
+  // Per-series settings (these override the Niche defaults when set)
+  artStyleId              Int?
+  voiceStyleId            Int?
+  artStyle                ArtStyle?    @relation(fields: [artStyleId], references: [id])
+  voiceStyle              VoiceStyle?  @relation(fields: [voiceStyleId], references: [id])
+  backgroundMusicIds      Int[]        @default([])
+  customMusicPaths        String[]     @default([])
+  effectIds               Int[]        @default([])
+  // Social accounts
+  youtubeChannelId        String?
+  youtubeChannelName      String?
+  instagramAccountId      String?
+  instagramAccountName    String?
+  instagramAccessToken    String?         // long-lived or never-expiring page access token
+  instagramTokenExpiresAt DateTime?
+  // ── YouTube channel credentials (manual token path) ────────────────
+  // Access token expires after ~1h and is refreshed via youtubeRefreshToken.
+  // Refresh token is long-lived (until manually revoked).
+  youtubeAccessToken      String?
+  youtubeRefreshToken     String?
+  youtubeTokenExpiresAt   DateTime?
+  // Content settings
+  contentMode             String       @default("single")
+  videoDuration           String       @default("short_30_40")
+  videosPerDay            Int          @default(1)
+  publishTimes            String[]     @default([])
+  sceneStyles             SceneStyle[]
+  topics                 Topic[]
+  // Onboarding
+  onboardingCompleted     Boolean      @default(false)
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+
+  @@index([slug])
+  @@index([nicheId])
+}
+
+model SceneStyle {
+  id        Int    @id @default(autoincrement())
+  seriesId  String
+  series    Series @relation(fields: [seriesId], references: [id])
+  name      String
+  prompt    String
+  sceneType String // "intro" | "action" | "background" | "transition"
+}
+
+model ArtStyle {
+  id            Int             @id @default(autoincrement())
+  name          String          @unique
+  slug          String          @unique
+  description   String?
+  // Style keywords prepended at prompt start (5-7 generic descriptors, no
+  // artist names — pattern from d4441a8 April commit).
+  promptSuffix  String          @default("")
+  // Compact 5-7 keyword anchor — single short phrase that locks in the style.
+  promptKeywords String         @default("")
+  // Quality tags appended at prompt end for fidelity enhancement.
+  promptQuality  String         @default("")
+  examplePrompt String?
+  thumbnailUrl  String? // Cached Pollinations preview image (e.g. /images/art-styles/anime.jpg)
+  // Sample prompt used to generate thumbnailUrl if not yet cached.
+  previewPrompt String?         @default("a hero standing on a cliff, dramatic lighting, masterpiece, best quality, highly detailed, 8k")
+  ChannelConfig ChannelConfig[]
+  Series        Series[]
+
+  @@index([slug])
+}
+
+model VoiceStyle {
+  id             Int             @id @default(autoincrement())
+  name           String          @unique
+  slug           String          @unique
+  azureVoiceName String
+  description    String?
+  tags           String[]        @default([])
+  isPremium      Boolean         @default(false)
+  // Azure-provided sample audio URL (the "listen" preview clip). These ship
+  // with each Azure Neural voice so we don't have to call the TTS API just
+  // for previews. Format: https://aka.ms/csspeech/samples/<voice>.wav
+  sampleAudioUrl String?
+  // Short preview text that pairs with sampleAudioUrl (shown in UI)
+  sampleText     String?         @default("Hello, this is a preview of my voice for your videos.")
+  ChannelConfig  ChannelConfig[]
+  Series         Series[]
+
+  @@index([slug])
+}
+
+model BackgroundMusic {
+  id         Int     @id @default(autoincrement())
+  name       String
+  slug       String  @unique
+  category   String
+  localPath  String?
+  url        String?
+  duration   Int?
+  isUploaded Boolean @default(false)
+
+  @@index([slug])
+  @@index([category])
+}
+
+model Effect {
+  id           Int     @id @default(autoincrement())
+  name         String  @unique
+  slug         String  @unique
+  description  String?
+  promptHint   String?
+  remotionType String?
+}
+
+model SocialAccount {
+  // FK to the channel config (niche-scoped) this account is bound to. Multiple
+  // accounts can be linked per channel — the user picks one when publishing.
+  // Cascade delete so removing a niche config tears down all its connections.
+  channelConfigId String?
+  channelConfig   ChannelConfig? @relation(fields: [channelConfigId], references: [id], onDelete: Cascade)
+  platform        SocialPlatform
+  // External account identifier (YouTube channel id, IG user id, etc.)
+  externalId      String
+  // Display name shown in the UI (@handle, channel title, etc.)
+  displayName     String
+  // Profile picture URL (optional, used in the UI)
+  profileImageUrl String?
+  // OAuth tokens. YouTube uses refreshable access + refresh tokens; Instagram
+  // uses a long-lived (60-day) access token with no refresh token. Tokens are
+  // encrypted at rest via lib/crypto.ts.
+  accessToken     String?
+  refreshToken    String?
+  expiresAt       DateTime?
+  // Set of OAuth scopes granted by the user (e.g. youtube.upload, instagram_basic)
+  scopes          String[]          @default([])
+  // Set after the user successfully posts for the first time — useful for
+  // showing "Verified" badges in the UI.
+  lastVerifiedAt  DateTime?
+  // Last error from the platform API (e.g. token revoked, rate-limited). Cleared
+  // on the next successful API call.
+  lastErrorAt     DateTime?
+  lastErrorMessage String?
+  status          SocialAccountStatus @default(pending)
+  userId          String              @default("default")
+  // Free-form platform metadata (channel art, page followers count, etc.)
+  metadata        Json?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@id([platform, externalId])
+  @@index([channelConfigId])
+  @@index([platform])
+}
+
+model Batch {
+  id           String           @id @default(uuid())
+  name         String
+  description  String?
+  contentMode  ContentMode      @default(single)
+  configJson   Json?
+  videosPerDay Int              @default(2)
+  aspectRatio  VideoAspectRatio @default(portrait)
+  archived     Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  videos       Video[]
+}
+
+model TopicBatch {
+  id        Int      @id @default(autoincrement())
+  baseTopic String
+  days      Int      @default(30)
+  createdAt DateTime @default(now())
+  topics    Topic[]
+}
+
+model Topic {
+  id              Int        @id @default(autoincrement())
+  batchId         Int
+  batch           TopicBatch @relation(fields: [batchId], references: [id])
+  seriesId        String?    // links to Series.id
+  series          Series?    @relation(fields: [seriesId], references: [id])
+  // Content
+  title           String
+  fullStory       String?    // full narration / story script
+  // Source tracking
+  sourceType      SourceType @default(ai)
+  sourceUrl       String?    // YouTube URL if from YouTube
+  sourceViews     Int?       // YouTube view count
+  sourceDuration  Int?        // duration in seconds
+  sourceTranscript String?   // YouTube transcript text
+  // State
+  selected        Boolean    @default(false)
+  reviewCompleted Boolean    @default(false)
+  isExistingVideo Boolean    @default(false)
+  video           Video?
+}
+
+enum SourceType {
+  ai
+  youtube
+}
+
+model Video {
+  id               Int              @id @default(autoincrement())
+  topicId          Int              @unique
+  topic            Topic            @relation(fields: [topicId], references: [id])
+  title            String
+  narration        String           @default("")
+  narrationPath    String?
+  durationSeconds  Int              @default(45)
+  videoPath        String?
+  thumbnailPath    String?
+  publishAt        DateTime?
+  batchId          String?
+  batch            Batch?           @relation(fields: [batchId], references: [id])
+  orderIndex       Int?
+  pipelineStage    PipelineStage    @default(draft)
+  generationStatus GenerationStatus @default(generating)
+  uploadStatus     UploadStatus     @default(new)
+  description      String?
+  tags             String?
+  youtubeVideoId   String?
+  model            String?
+  metadataJson     Json?
+  scenes           Scene[]
+}
+
+model Scene {
+  id              Int     @id @default(autoincrement())
+  videoId         Int
+  video           Video   @relation(fields: [videoId], references: [id])
+  index           Int
+  narration       String
+  prompt          String
+  imagePath       String?
+  audioPath       String?
+  audioDurationMs Int?
+  taskId          String?
+  sceneVideoPath  String?
+}
