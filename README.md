@@ -46,7 +46,7 @@ Built for creators who produce content across multiple niches and channels. No p
 
 ```bash
 git clone <your-repo-url>
-cd ytautomation
+cd framecraft
 pnpm install
 ```
 
@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and fill in each variable. Here's what each sectio
 ### Database
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/ytautomation?schema=public"
+DATABASE_URL="postgresql://user:password@localhost:5432/framecraft?schema=public"
 ```
 
 Any PostgreSQL instance works. Render, Supabase, or a local Docker container.
@@ -283,7 +283,7 @@ If an image doesn't match the narration:
 ## Project Structure
 
 ```
-ytautomation/
+framecraft/
 ├── app/
 │   ├── api/
 │   │   ├── assets/generate/      # Image + voice generation
