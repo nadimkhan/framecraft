@@ -12,6 +12,7 @@ import {
   Youtube, Bot, ExternalLink, BarChart2, Clock, FileText, Eye,
   ChevronDown, ChevronUp, Image as ImageIcon, Volume2, RotateCcw,
   X, Maximize2, ShieldCheck, Video as VideoIcon, Film, Wand2,
+  Copy, Clipboard,
 } from "lucide-react"
 
 interface BatchSummary {
@@ -26,6 +27,8 @@ interface SceneInfo {
   index: number
   narration: string
   prompt: string
+  animationType: string
+  videoMotionPrompt: string
   imagePath: string | null
   audioPath: string | null
   sceneVideoPath: string | null
@@ -1179,6 +1182,15 @@ export default function ScenesClient() {
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(scene.prompt || '')
+                                      }}
+                                      className="text-muted-foreground hover:text-foreground transition-colors"
+                                      title="Copy image prompt"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -1223,6 +1235,37 @@ export default function ScenesClient() {
                                 <p className="text-sm leading-relaxed bg-background p-3 rounded border italic min-h-[80px]">
                                   {scene.prompt || "(empty)"}
                                 </p>
+
+                                {/* ── Video Motion ─────────────────────────────── */}
+                                {scene.videoMotionPrompt && (
+                                  <div className="mt-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                        <Film className="w-3 h-3" /> Video Motion
+                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        {scene.animationType && scene.animationType !== 'none' && (
+                                          <Badge variant="outline" className="text-xs font-mono px-1.5 py-0">
+                                            {scene.animationType}
+                                          </Badge>
+                                        )}
+                                        <button
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(scene.videoMotionPrompt || '')
+                                            // Could add a toast here
+                                          }}
+                                          className="text-muted-foreground hover:text-foreground transition-colors"
+                                          title="Copy video motion prompt"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="text-sm leading-relaxed bg-muted/50 p-3 rounded border text-muted-foreground">
+                                      {scene.videoMotionPrompt}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
