@@ -71,7 +71,7 @@ function isValidAnimationType(v: string): v is AnimationType {
 }
 
 async function callLLM(prompt: string, systemPrompt: string): Promise<string | null> {
-  const result = await generateText(systemPrompt, prompt, { temperature: 0.8, maxTokens: 3000 })
+  const result = await generateText(systemPrompt, prompt, { temperature: 0.8, maxTokens: 6000 })
   return result?.content || null
 }
 
@@ -256,6 +256,7 @@ Return JSON with scenes — pick the count that best fits the story's natural pa
   }
 
   const parsed = extractJson(content) as GeneratedScript | null
+  console.log('[scene-gen] LLM raw response:', content?.slice(0, 500))
   if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
     throw new Error('Failed to parse scene JSON from LLM response')
   }
