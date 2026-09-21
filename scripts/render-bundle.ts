@@ -133,7 +133,7 @@ function getMimeType(filePath: string): string {
 }
 
 export async function renderVideoWithBundler(
-  scenes: Array<{ image: string; audio: string; narration?: string }>,
+  scenes: Array<{ image: string; audio: string; narration?: string; animationType?: string; videoMotionPrompt?: string }>,
   outputPath: string,
   music?: string,
   title?: string,
@@ -173,6 +173,8 @@ export async function renderVideoWithBundler(
       imageSrc: `${baseUrl}${scene.image}`,
       audioSrc: `${baseUrl}${scene.audio}`,
       narration: scene.narration,
+      animationType: scene.animationType,
+      videoMotionPrompt: scene.videoMotionPrompt,
     }));
 
     const timeline = await buildTimeline(rawScenes, fps);

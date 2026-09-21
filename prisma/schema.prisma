@@ -357,6 +357,8 @@ model Scene {
   index           Int
   narration       String
   prompt          String
+  animationType   String  @default("none")
+  videoMotionPrompt String @default("")
   imagePath       String?
   audioPath       String?
   audioDurationMs Int?

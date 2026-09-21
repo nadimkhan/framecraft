@@ -1,6 +1,18 @@
 import { VIDEO_CONFIG, SceneTimeline } from '../types';
 import { getAudioDuration, detectTrailingSilence, secondsToFrames, analyzeAudioSpeed, AudioSpeedAnalysis } from './audio-processing';
 
+// Animation type allowlist (matches AnimationType in types.ts)
+const VALID_ANIMATION_TYPES = new Set([
+  'none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down',
+  'slow-scale-rotate', 'parallax-layer', 'subtle-float', 'cinematic-push',
+  'ken-burns', 'spiral-zoom', 'pulse-breathe', 'drift-diagonal',
+  'focus-pull', 'orbit-light',
+]);
+
+function toAnimationType(v: string): AnimationType {
+  return VALID_ANIMATION_TYPES.has(v) ? v as AnimationType : 'none'
+}
+
 // ============================================================
 // CONFIGURATION
 // ============================================================
@@ -16,6 +28,10 @@ export interface RawSceneInput {
   imageSrc: string;
   audioSrc: string;
   narration?: string;
+  /** Override auto-assigned animation type. If omitted, buildTimeline auto-selects. */
+  animationType?: string;
+  /** Descriptive motion prompt for this scene (not used by Remotion, stored for reference). */
+  videoMotionPrompt?: string;
 }
 
 export interface TimelineScene {
@@ -252,8 +268,9 @@ export async function buildTimeline(
     const rawTransitionOverlap = i === 0 ? 0 : Math.round((timing.trailing_silence_ms / 1000) * fps);
     const transitionOverlap = rawTransitionOverlap;
 
-    // Animation type - scene 0 (intro) gets 'none', others get random animations
-    const animationType = i === 0 ? 'none' : ANIMATION_TYPES[(i - 1) % ANIMATION_TYPES.length];
+    // Animation type — use scene-provided override, else auto-select (scene 0 = none)
+    const rawType = scenes[i].animationType
+    const animationType = rawType ? toAnimationType(rawType) : (i === 0 ? 'none' : ANIMATION_TYPES[(i - 1) % ANIMATION_TYPES.length])
 
     // Wipe directions for soft-wipe transition (cycles: right, left, up, down)
     const WIPE_DIRECTIONS = ['right', 'left', 'up', 'down'] as const;

@@ -3,11 +3,11 @@
  * Splits a story (fullStory or sourceTranscript) into Scene records using Kira LLM.
  *
  * Niche/Series-aware:
- *  - Looks up Topic → Series → derives scene count from `Series.videoDuration`:
- *      short_30_40  → 4 scenes (~8-10s narration each)
- *      short_50_60  → 5 scenes (~10-12s each)
- *      long_60_120  → 8 scenes
- *      long_120_300 → 12 scenes
+ *  - Looks up Topic -> Series -> derives scene count from `Series.videoDuration`:
+ *      short_30_40  -> 4 scenes (~8-10s narration each)
+ *      short_50_60  -> 5 scenes (~10-12s each)
+ *      long_60_120  -> 8 scenes
+ *      long_120_300 -> 12 scenes
  *  - If Series has `SceneStyle[]` entries, uses them as prompt hints per scene type
  *  - Applies `Series.artStyle.promptSuffix` to all image prompts
  */
@@ -16,9 +16,20 @@ import { buildImagePrompt } from './promptSanitizer'
 import { buildSceneSystemPrompt, matchStyleSpec } from './promptStyles'
 import { generateText } from './llm'
 
+const VALID_ANIMATION_TYPES = [
+  'none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right',
+  'pan-up', 'pan-down', 'slow-scale-rotate', 'parallax-layer',
+  'subtle-float', 'cinematic-push', 'ken-burns', 'spiral-zoom',
+  'pulse-breathe', 'drift-diagonal', 'focus-pull', 'orbit-light',
+] as const
+
+type AnimationType = typeof VALID_ANIMATION_TYPES[number]
+
 interface ScenePlan {
   narration: string
   prompt: string
+  animationType: AnimationType
+  videoMotionPrompt: string
 }
 
 interface GeneratedScript {
@@ -55,8 +66,12 @@ function extractJson(text: string): any | null {
   return null
 }
 
+function isValidAnimationType(v: string): v is AnimationType {
+  return VALID_ANIMATION_TYPES.includes(v as AnimationType)
+}
+
 async function callLLM(prompt: string, systemPrompt: string): Promise<string | null> {
-  const result = await generateText(systemPrompt, prompt, { temperature: 0.8, maxTokens: 2500 })
+  const result = await generateText(systemPrompt, prompt, { temperature: 0.8, maxTokens: 3000 })
   return result?.content || null
 }
 
@@ -128,9 +143,6 @@ export async function generateScenesForTopic(
   }
 
   // ─── Idempotent: return existing scenes UNLESS force=true ──────────────
-  // The Regenerate button on the UI uses force=true to re-split the story
-  // from scratch. Without force, we return the cached scenes to avoid
-  // wasting LLM calls on every page reload.
   if (!options.force && video.scenes && video.scenes.length > 0) {
     return {
       videoId: video.id,
@@ -157,10 +169,6 @@ export async function generateScenesForTopic(
   }
 
   // ─── Build context-aware LLM prompt ──────────────────────────────────────
-  // Use the central image-prompt design system so the LLM writes prompts
-  // matching the configured ArtStyle. We strip any hallucinated style cues
-  // from scene.prompt via the sanitizer and prepend the canonical suffix at
-  // image-generation time. This gives us 100% control over final prompts.
   const sceneStyleGuidance = sceneStyles.length > 0
     ? `\n\nScene type guidance — use these visual cues for each scene's index:\n` +
       sceneStyles.map((ss: any) => `Scene ${ss.sceneType}: ${ss.prompt}`).join('\n')
@@ -174,6 +182,19 @@ export async function generateScenesForTopic(
   const styleSpec = matchStyleSpec(artStyleName)
   const styleDesignBlock = `\n\n# IMAGE PROMPT DESIGN — Every scene's "prompt" field must follow this design system:\n${buildSceneSystemPrompt(styleSpec, nicheCategory || 'general')}\n`
 
+  // Build the JSON example string safely (no backticks inside template)
+  const jsonExample = JSON.stringify({
+    title: "improved video title",
+    scenes: [
+      {
+        narration: "exact narration text for this scene, 8-15 words",
+        prompt: "image prompt that depicts EXACTLY what this narration describes",
+        animationType: "zoom-in",
+        videoMotionPrompt: "2-3 sentences describing camera motion and focal point changes.",
+      },
+    ],
+  })
+
   const systemPrompt = `You are a YouTube video script director for a ${durationLabel} video.
 You will split the user's story into scenes. CRITICAL PACING RULES:
 - Use between ${minCount} and ${maxCount} scenes total — pick the count that fits the story's natural rhythm. Do NOT force a fixed number.
@@ -184,7 +205,7 @@ ${styleDesignBlock}${nicheContext}${sceneStyleGuidance}
 
 # CHARACTER NAME PRESERVATION (critical)
 # Preserve character names EXACTLY as they appear in the original story.
-# The LLM often invents slight name variants (Bio → Beau, Milan → Malin) which
+# The LLM often invents slight name variants (Bio -> Beau, Milan -> Malin) which
 # causes the downstream image generator to lose track of which entity is which
 # character. Use the EXACT spelling from the story's first mention.
 - When a character first appears in the story, note the EXACT spelling of their
@@ -200,18 +221,27 @@ The "prompt" for each scene MUST be visually grounded in THAT scene's "narration
 - Never invent subjects, settings, or props that don't appear in the narration. If the narration is vague, fill from the IMMEDIATE context of that scene's slice of the story.
 - Don't carry over details from other scenes. Each scene's prompt is self-contained and tied to its own narration.
 
+# VIDEO ANIMATION (per scene — critical)
+For EACH scene, you must provide:
+1. "animationType": pick ONE from this exact list — no other values allowed:
+   none, zoom-in, zoom-out, pan-left, pan-right, pan-up, pan-down,
+   slow-scale-rotate, parallax-layer, subtle-float, cinematic-push,
+   ken-burns, spiral-zoom, pulse-breathe, drift-diagonal, focus-pull, orbit-light
+   Pick based on the scene's emotional tone, pacing, and camera intent.
+
+2. "videoMotionPrompt": a 2-3 sentence description of HOW the image should animate.
+   Describe: camera movement, focal point shifts, what moves vs stays still,
+   and how motion creates emotional impact. Match the animationType you selected.
+   Example: "The camera slowly pushes in toward her face as the corridor behind her stretches into darkness. The doll in her hands remains perfectly still while the shadows on the wall ripple. The zoom intensifies the dread."
+
 Return ONLY valid JSON (no markdown, no preamble):
-{
-  "title": "improved video title",
-  "scenes": [
-    {"narration": "exact narration text for this scene, 8-15 words", "prompt": "image prompt that depicts EXACTLY what this narration describes, anchored to the named subjects and locations"},
-    ...
-  ]
-}
+${jsonExample}
 - Each narration MUST be a CONTIGUOUS slice of the original story in order (no skipping, no reordering).
 - Every word of the original story must appear in exactly one scene's narration.
 - Each image prompt must follow the IMAGE PROMPT DESIGN framework above AND the SUBJECT ANCHORING RULE — depict exactly what the narration describes.
-- Do NOT include any art-style words, "photorealistic", "cinematic", "vivid", or other meta-instructions in the prompt — the style is applied automatically at image-generation time.`
+- Do NOT include any art-style words, "photorealistic", "cinematic", "vivid", or other meta-instructions in the prompt — the style is applied automatically at image-generation time.
+- animationType MUST be one of the 17 exact values listed above — do not invent new ones.
+- videoMotionPrompt should describe actual motion, not just repeat the narration.`
 
   const userPrompt = `Title: ${topic.title}
 
@@ -237,8 +267,6 @@ Return JSON with scenes — pick the count that best fits the story's natural pa
   if (inputScenes.length === 0) {
     throw new Error('LLM returned scenes but all were missing narration/prompt fields')
   }
-  // If LLM returned too many scenes, take the first maxCount (most common over-shoot)
-  // If too few, accept as-is (story may be short)
   let clampedScenes = inputScenes
   if (inputScenes.length > maxCount) {
     console.log(`[scene-gen] LLM returned ${inputScenes.length} scenes, clamping to maxCount=${maxCount}`)
@@ -248,8 +276,6 @@ Return JSON with scenes — pick the count that best fits the story's natural pa
   }
 
   // ─── Post-process: clamp oversize narrations ─────────────────────────────
-  // If a scene narration is too long, split it at sentence boundaries.
-  // This guarantees no single scene exceeds maxSecs.
   function splitLongNarration(text: string, maxWords: number): string[] {
     const words = text.split(/\s+/).filter(Boolean)
     if (words.length <= maxWords) return [text.trim()]
@@ -267,24 +293,25 @@ Return JSON with scenes — pick the count that best fits the story's natural pa
   }
 
   const maxWordsPerScene = isLong ? 60 : 20
-  const finalScenes: { narration: string; prompt: string }[] = []
+  const expandedScenes: ScenePlan[] = []
   for (const s of clampedScenes) {
     const chunks = splitLongNarration(s.narration, maxWordsPerScene)
     for (const chunk of chunks) {
-      finalScenes.push({ narration: chunk, prompt: s.prompt })
+      expandedScenes.push({
+        narration: chunk,
+        prompt: s.prompt || '',
+        animationType: isValidAnimationType(s.animationType) ? s.animationType : 'none',
+        videoMotionPrompt: s.videoMotionPrompt || '',
+      })
     }
   }
-  // If the split produced more than maxCount, trim excess (keeps story order)
-  const trimmedScenes = finalScenes.length > maxCount ? finalScenes.slice(0, maxCount) : finalScenes
-  if (finalScenes.length > maxCount) {
-    console.log(`[scene-gen] post-split produced ${finalScenes.length}, trimmed to ${maxCount}`)
+  const trimmedScenes = expandedScenes.length > maxCount ? expandedScenes.slice(0, maxCount) : expandedScenes
+  if (expandedScenes.length > maxCount) {
+    console.log(`[scene-gen] post-split produced ${expandedScenes.length}, trimmed to ${maxCount}`)
   }
 
-  // ─── Apply art style via the sanitizer (sanitizes + prepends) ───────────
-  // The sanitizer strips any LLM-hallucinated style cues from scene.prompt
-  // and prepends the canonical ArtStyle.promptSuffix as the leading anchor.
-  // Every persisted prompt has identical structure: "<STYLE>. <scene>".
-  const scenesToCreate = clampedScenes.map((s, i) => {
+  // ─── Apply art style via the sanitizer ───────────────────────────────────
+  const scenesToCreate = trimmedScenes.map((s, i) => {
     const { prompt } = buildImagePrompt({
       artStyleSuffix,
       scenePrompt: s.prompt || '',
@@ -294,6 +321,8 @@ Return JSON with scenes — pick the count that best fits the story's natural pa
       index: i,
       narration: s.narration,
       prompt,
+      animationType: s.animationType,
+      videoMotionPrompt: s.videoMotionPrompt,
     }
   })
 

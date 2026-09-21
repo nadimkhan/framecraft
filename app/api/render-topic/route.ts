@@ -8,6 +8,8 @@ interface SceneInput {
   image: string;
   audio: string;
   narration?: string;
+  animationType?: string;
+  videoMotionPrompt?: string;
 }
 
 interface JobStatus {
@@ -69,6 +71,8 @@ async function buildScenesForTopic(topicId: string): Promise<{ scenes: SceneInpu
       image: imageRel,
       audio: audioRel,
       narration: scene.narration || undefined,
+      animationType: scene.animationType || undefined,
+      videoMotionPrompt: scene.videoMotionPrompt || undefined,
     });
   }
 
