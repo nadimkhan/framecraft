@@ -140,6 +140,8 @@ model Series {
   instagramAccountName    String?
   instagramAccessToken    String?         // long-lived or never-expiring page access token
   instagramTokenExpiresAt DateTime?
+  // ── Video generation ─────────────────────────────────────────────────
+  lightningEndpoint       String?
   // ── YouTube channel credentials (manual token path) ────────────────
   // Access token expires after ~1h and is refreshed via youtubeRefreshToken.
   // Refresh token is long-lived (until manually revoked).

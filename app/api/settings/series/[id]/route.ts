@@ -35,7 +35,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           backgroundMusicIds, customMusicPaths, effectIds, contentMode,
           videoDuration, videosPerDay, publishTimes,
           youtubeChannelId, youtubeChannelName, youtubeAccessToken, youtubeRefreshToken,
-          instagramAccountId, instagramAccountName, instagramAccessToken } = body
+          instagramAccountId, instagramAccountName, instagramAccessToken,
+          lightningEndpoint } = body
 
   const data: any = {}
   if (seriesName !== undefined) data.seriesName = seriesName
@@ -59,6 +60,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (instagramAccountId !== undefined) data.instagramAccountId = instagramAccountId || null
   if (instagramAccountName !== undefined) data.instagramAccountName = instagramAccountName || null
   if (instagramAccessToken !== undefined) data.instagramAccessToken = instagramAccessToken || null
+  if (lightningEndpoint !== undefined) data.lightningEndpoint = lightningEndpoint || null
 
   const updated = await prisma.series.update({
     where: { id },

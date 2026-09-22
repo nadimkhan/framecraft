@@ -47,6 +47,7 @@ interface ChannelConfig {
   instagramAccountId: string | null
   instagramAccountName: string | null
   instagramAccessToken: string | null
+  lightningEndpoint: string | null
   contentMode: string
   videoDuration: string
   videosPerDay: number
@@ -221,6 +222,7 @@ export default function NicheSettingsPage() {
       instagramAccountId: null,
       instagramAccountName: null,
       instagramAccessToken: null,
+      lightningEndpoint: null,
       onboardingCompleted: s.onboardingCompleted,
     })
   }
@@ -880,6 +882,41 @@ export default function NicheSettingsPage() {
                         Connect via OAuth to enable one-click Instagram Reel publishing.
                       </p>
                     )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 6.5 Lightning AI Video */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-xs font-normal">6.5</span>
+                    <Wand2 className="w-4 h-4" /> Lightning AI Video
+                  </CardTitle>
+                  <CardDescription>LTX-Video Gradio endpoint. Changes each time Lightning restarts.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Label>Gradio Endpoint URL</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="https://xxxx.gradio.live"
+                        value={draft.lightningEndpoint || ''}
+                        onChange={e => setField('lightningEndpoint', e.target.value || null)}
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setField('lightningEndpoint', null)}
+                        title="Use default endpoint"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to use the default. Update when Lightning restarts.
+                    </p>
                   </div>
                 </CardContent>
               </Card>

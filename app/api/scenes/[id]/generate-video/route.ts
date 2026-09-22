@@ -50,7 +50,9 @@ export async function POST(
     }
 
     // ─── Determine aspect ratio from series contentMode ──────────────────────
-    const contentMode = scene.video.topic.series?.contentMode ?? 'long'
+    const series = scene.video.topic.series
+    const lightningEndpoint = (series as any)?.lightningEndpoint || undefined
+    const contentMode = series?.contentMode ?? 'long'
     const aspectRatio = contentMode === 'shorts' ? '9:16' : '16:9'
 
     // ─── Duration from audio duration (seconds) ──────────────────────────────
@@ -87,6 +89,7 @@ export async function POST(
         seed: -1,
       },
       sceneFolder,
+      lightningEndpoint,
     )
 
     // ─── Update DB ──────────────────────────────────────────────────────────

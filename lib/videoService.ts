@@ -1,7 +1,6 @@
 /**
  * Lightning AI LTX-Video generation via Gradio API.
  *
- * Endpoint: https://64d18b6e91e71c6b63.gradio.live/
  * Auth: none
  *
  * Flow:
@@ -22,13 +21,10 @@ export interface LightningOptions {
   seed?: number
 }
 
-const GRADIO_BASE = "https://64d18b6e91e71c6b63.gradio.live"
+const DEFAULT_GRADIO_BASE = "https://64d18b6e91e71c6b63.gradio.live"
 const POLL_INTERVAL_MS = 2000
 const MAX_WAIT_MS = 10 * 60 * 1000 // 10 minutes
 
-/**
- * Pick the closest Lightning duration option to the target duration in seconds.
- */
 export function mapDuration(targetSeconds: number): LightningOptions["duration"] {
   if (targetSeconds <= 2) return "2s (49f)"
   if (targetSeconds <= 3) return "3s (73f)"
@@ -48,18 +44,15 @@ interface GradioStatusResult {
 }
 
 export interface LightningResult {
-  videoUrl: string       // public URL for the downloaded video
-  videoPath: string      // server-side save path
+  videoUrl: string
+  videoPath: string
   subtitlePath: string | null
 }
 
-/**
- * Submit a video generation job and wait for completion.
- * Returns the local paths of the downloaded video and subtitle files.
- */
 export async function generateLightningVideo(
   options: LightningOptions,
   outputDir: string,
+  endpoint?: string,
 ): Promise<LightningResult> {
   const {
     prompt,
@@ -71,15 +64,17 @@ export async function generateLightningVideo(
     seed = -1,
   } = options
 
+  const base = endpoint || DEFAULT_GRADIO_BASE
+
   // ─── Step 1: Submit job ────────────────────────────────────────────────────
-  const submitRes = await fetch(`${GRADIO_BASE}/gradio_api/call/generate`, {
+  const submitRes = await fetch(`${base}/gradio_api/call/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       data: [
-        prompt,       // prompt
-        null,         // img_start — not used for text-to-video
-        null,         // img_end
+        prompt,
+        null,       // img_start — not used for text-to-video
+        null,       // img_end
         seed,
         duration,
         resolution,
@@ -95,7 +90,7 @@ export async function generateLightningVideo(
   }
 
   const { event_id } = await submitRes.json() as GradioSubmitResult
-  console.log(`[lightning] job submitted: event_id=${event_id}`)
+  console.log(`[lightning] job submitted: event_id=${event_id} base=${base}`)
 
   // ─── Step 2: Poll until complete ──────────────────────────────────────────
   const deadline = Date.now() + MAX_WAIT_MS
@@ -104,7 +99,7 @@ export async function generateLightningVideo(
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS)
 
-    const pollRes = await fetch(`${GRADIO_BASE}/gradio_api/call/generate/${event_id}`)
+    const pollRes = await fetch(`${base}/gradio_api/call/generate/${event_id}`)
     if (!pollRes.ok) {
       console.warn(`[lightning] poll ${event_id} failed: ${pollRes.status}, retrying...`)
       continue
@@ -129,23 +124,25 @@ export async function generateLightningVideo(
     throw new Error(`Lightning generation timed out after ${MAX_WAIT_MS / 1000}s`)
   }
 
-  // ─── Step 3: Extract file paths from result ────────────────────────────────
-  const completeResult = await fetch(`${GRADIO_BASE}/gradio_api/call/generate/${event_id}`).then(r => r.json()) as GradioStatusResult
+  // ─── Step 3: Fetch final result ────────────────────────────────────────────
+  const completeResult = await (await fetch(`${base}/gradio_api/call/generate/${event_id}`)).json() as GradioStatusResult
   const data = completeResult.data as any[]
 
   if (!data || !Array.isArray(data) || !data[0]) {
     throw new Error(`Unexpected Gradio result shape: ${JSON.stringify(data)}`)
   }
 
-  const { video: videoFilename, subtitles: subtitleFilename } = data[0] as { video: string; subtitles: string | null }
+  const { video: videoFilename, subtitles: subtitleFilename } = data[0] as {
+    video: string
+    subtitles: string | null
+  }
 
   if (!videoFilename) {
     throw new Error(`No video filename in Gradio response: ${JSON.stringify(data[0])}`)
   }
 
   // ─── Step 4: Download files ────────────────────────────────────────────────
-  // Gradio serves files at /file={filename}
-  const videoFileUrl = `${GRADIO_BASE}/file=${videoFilename}`
+  const videoFileUrl = `${base}/file=${videoFilename}`
   const videoFilenameOnly = videoFilename.split("/").pop()!
   const videoLocalPath = `${outputDir}/${videoFilenameOnly}`
 
@@ -154,7 +151,7 @@ export async function generateLightningVideo(
 
   let subtitleLocalPath: string | null = null
   if (subtitleFilename) {
-    const subtitleFileUrl = `${GRADIO_BASE}/file=${subtitleFilename}`
+    const subtitleFileUrl = `${base}/file=${subtitleFilename}`
     const subtitleFilenameOnly = subtitleFilename.split("/").pop()!
     subtitleLocalPath = `${outputDir}/${subtitleFilenameOnly}`
     await downloadFile(subtitleFileUrl, subtitleLocalPath)
@@ -176,10 +173,9 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Download failed ${res.status}: ${url}`)
 
-  // Ensure output dir exists
   const fs = await import("fs")
-  const path = await import("path")
-  const dir = path.dirname(destPath)
+  const pathMod = await import("path")
+  const dir = pathMod.dirname(destPath)
   fs.mkdirSync(dir, { recursive: true })
 
   const buffer = Buffer.from(await res.arrayBuffer())
