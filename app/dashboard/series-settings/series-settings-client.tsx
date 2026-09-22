@@ -70,6 +70,7 @@ interface SeriesType {
   videosPerDay: number
   publishTimes: string[]
   onboardingCompleted: boolean
+  lightningEndpoint: string | null
   niche: { id: number; category: string; slug: string }
   artStyle: { id: number; name: string; slug: string } | null
   voiceStyle: { id: number; name: string; slug: string } | null
@@ -222,7 +223,7 @@ export default function NicheSettingsPage() {
       instagramAccountId: null,
       instagramAccountName: null,
       instagramAccessToken: null,
-      lightningEndpoint: null,
+      lightningEndpoint: s.lightningEndpoint ?? null,
       onboardingCompleted: s.onboardingCompleted,
     })
   }
