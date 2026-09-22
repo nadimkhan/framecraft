@@ -8,7 +8,6 @@
  *  2. Poll GET /gradio_api/call/generate/{event_id} every 2s
  *  3. When status === "complete", response contains { data: [{ video: filepath, subtitles: filepath|null }] }
  *  4. Download video + subtitles from /file={filename}
- *  5. Save to scene folder, update scene.sceneVideoPath in DB
  */
 
 export interface LightningOptions {
@@ -23,7 +22,7 @@ export interface LightningOptions {
 
 const DEFAULT_GRADIO_BASE = "https://64d18b6e91e71c6b63.gradio.live"
 const POLL_INTERVAL_MS = 2000
-const MAX_WAIT_MS = 10 * 60 * 1000 // 10 minutes
+const MAX_WAIT_MS = 10 * 60 * 1000
 
 export function mapDuration(targetSeconds: number): LightningOptions["duration"] {
   if (targetSeconds <= 2) return "2s (49f)"
@@ -65,15 +64,18 @@ export async function generateLightningVideo(
   } = options
 
   const base = endpoint || DEFAULT_GRADIO_BASE
+  const submitUrl = `${base}/gradio_api/call/generate`
+
+  console.log(`[lightning] base=${base} submit_url=${submitUrl} prompt="${prompt.slice(0, 60)}..."`)
 
   // ─── Step 1: Submit job ────────────────────────────────────────────────────
-  const submitRes = await fetch(`${base}/gradio_api/call/generate`, {
+  const submitRes = await fetch(submitUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       data: [
         prompt,
-        null,       // img_start — not used for text-to-video
+        null,       // img_start — text-to-video
         null,       // img_end
         seed,
         duration,
@@ -86,11 +88,12 @@ export async function generateLightningVideo(
   })
 
   if (!submitRes.ok) {
-    throw new Error(`Gradio submit failed: ${submitRes.status} ${await submitRes.text()}`)
+    const body = await submitRes.text()
+    throw new Error(`Gradio submit failed: ${submitRes.status} ${body}`)
   }
 
   const { event_id } = await submitRes.json() as GradioSubmitResult
-  console.log(`[lightning] job submitted: event_id=${event_id} base=${base}`)
+  console.log(`[lightning] job submitted: event_id=${event_id}`)
 
   // ─── Step 2: Poll until complete ──────────────────────────────────────────
   const deadline = Date.now() + MAX_WAIT_MS
@@ -99,7 +102,8 @@ export async function generateLightningVideo(
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS)
 
-    const pollRes = await fetch(`${base}/gradio_api/call/generate/${event_id}`)
+    const pollUrl = `${base}/gradio_api/call/generate/${event_id}`
+    const pollRes = await fetch(pollUrl)
     if (!pollRes.ok) {
       console.warn(`[lightning] poll ${event_id} failed: ${pollRes.status}, retrying...`)
       continue
