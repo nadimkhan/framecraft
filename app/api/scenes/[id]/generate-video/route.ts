@@ -32,6 +32,7 @@ export async function POST(
                 series: {
                   select: {
                     contentMode: true,
+                    lightningEndpoint: true,
                   },
                 },
               },
@@ -51,7 +52,7 @@ export async function POST(
 
     // ─── Determine aspect ratio from series contentMode ──────────────────────
     const series = scene.video.topic.series
-    const lightningEndpoint = (series as any)?.lightningEndpoint || undefined
+    const lightningEndpoint = series?.lightningEndpoint || undefined
     const contentMode = series?.contentMode ?? 'long'
     const aspectRatio = contentMode === 'shorts' ? '9:16' : '16:9'
 
