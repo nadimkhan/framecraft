@@ -230,11 +230,12 @@ For EACH scene, you must provide:
    ken-burns, spiral-zoom, pulse-breathe, drift-diagonal, focus-pull, orbit-light
    Pick based on the scene's emotional tone, pacing, and camera intent.
 
-2. "videoMotionPrompt": 2-3 sentences describing HOW the image animates. The art style for ALL scenes is: **"${artStyleName || 'the configured art style'}"**. You MUST explicitly name this art style at the START of every videoMotionPrompt, then describe the motion in that style.
-   Art style keywords to weave in: "${artStyleKeywords || artStyleSuffix || artStyleName || 'the configured art style'}"
-   Describe: camera movement, focal point shifts, what moves vs stays still,
-   and how motion creates emotional impact in this art style. Match the animationType selected.
-   Example (Creepy Comic): "Creepy Comic — bold black ink linework camera push: the camera zooms toward Milan's face as the toy shop shelves blur into halftone shadow. A dramatic ink-black shadow crawls across her skin while the cracked doll stays perfectly still. The zoom amplifies her isolation in classic gothic horror comic panel style."
+2. "videoMotionPrompt": 2-3 sentences describing ONLY the physical motion — camera movement, subject action, and environment motion. NO art style references, NO style keywords, NO named artists, NO medium descriptions. Describe what the VIEWER SEES MOVING.
+   - Camera: how does the camera move? (e.g. "the camera slowly pushes in toward the subject")
+   - Subject: what does the subject do? (e.g. "the girl's eyes widen as her head slowly turns toward the dark corner")
+   - Environment: what moves in the background? (e.g. "the shop window rattles as a draft passes")
+   - Match the animationType. Keep the pacing tense and deliberate.
+   Example: "The camera slowly pushes in toward the girl's face. Her eyes widen and her head turns step by step toward the dark corner behind her. The tin soldiers on the shelf tremble slightly from a draft."
 
 Return ONLY valid JSON (no markdown, no preamble):
 ${jsonExample}
