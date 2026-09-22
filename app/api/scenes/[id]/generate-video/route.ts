@@ -84,13 +84,8 @@ export async function POST(
     // Layer 1: physical scene (narration — ground truth)
     // Layer 2: style anchor + keywords
     // Layer 3: motion block (from videoMotionPrompt, style header stripped)
-    const styleAnchor = artStyle?.promptKeywords
-      ? artStyle.promptKeywords.split(',')[0]?.trim() || artStyle.name
-      : artStyle?.name || ''
-
     const enrichedPrompt = buildVideoPrompt({
       physicalScene: scene.narration,
-      styleAnchor,
       styleKeywords: artStyle?.promptKeywords || artStyle?.promptSuffix || '',
       videoMotionPrompt: scene.videoMotionPrompt || '',
       animationType: scene.animationType || 'none',

@@ -1,22 +1,14 @@
 /**
- * Build the final image prompt. Three-part structure designed for unambiguous
- * style anchoring:
+ * Build the final image prompt. Two-part structure:
  *
- *   `<style anchor>. <subject description>. <scene description>.`
+ *   `<physical scene>. The style is <style description>.`
  *
- * 1. **STYLE ANCHOR** (first 3-8 words) — the single defining phrase that
- *    locks in the art style. Image models weight the opening tokens heavily,
- *    so this MUST lead the prompt. Example: "Mike Mignola graphic novel
- *    illustration" for Creepy Comic.
- * 2. **SUBJECT DESCRIPTION** — names + what they look like.
- * 3. **SCENE DESCRIPTION** — composition + environment + framing + mood.
- *
- * The style anchor is extracted from the keyword block (first clause ≤ 8 words).
- * The full keyword block is also appended at the END for style reinforcement.
+ * The LLM outputs only the physical scene description (subjects, action, setting).
+ * Style is injected as a single clean block at the end.
  */
 
 export interface PromptBuildInput {
-  promptKeywords?: string   // full keyword block from ArtStyle (e.g. "Mike Mignola graphic novel illustration, heavy black ink linework, dense cross-hatching...")
+  promptKeywords?: string   // full keyword block from ArtStyle
   promptQuality?: string   // quality tags (e.g. "award-winning, 8k, detailed")
   artStyleSuffix?: string  // legacy fallback if no promptKeywords
   scenePrompt: string      // the LLM-generated physical scene description
@@ -49,6 +41,7 @@ function stripStyleFragments(text: string): string {
     'drawn in',
     'illustrated in',
     'style injection',
+    'the style is',
   ]
 
   let result = text
@@ -67,26 +60,8 @@ function stripStyleFragments(text: string): string {
  */
 function enforceSentence(text: string): string {
   if (!text) return ''
-  return text.endsWith('.') || text.endsWith('!') || text.endsWith('?')
-    ? text
-    : text + '.'
-}
-
-function enforceHierarchySentence(text: string): string {
-  return enforceSentence(stripStyleFragments(text))
-}
-
-/**
- * Extract a short style anchor from the keyword block.
- *
- * "Mike Mignola graphic novel illustration, heavy black ink linework..."
- *   → "Mike Mignola graphic novel illustration"  (first clause, ≤8 words)
- */
-function extractStyleAnchor(promptSuffix: string): string {
-  if (!promptSuffix) return ''
-  const firstClause = promptSuffix.split(',')[0]?.trim() || ''
-  const words = firstClause.split(/\s+/).slice(0, 8).join(' ')
-  return words
+  if (text.endsWith('.') || text.endsWith('!') || text.endsWith('?')) return text
+  return text + '.'
 }
 
 export interface PromptBuildResult {
@@ -101,7 +76,7 @@ export function buildImagePrompt(input: PromptBuildInput): PromptBuildResult {
 
   // Strip style fragments the LLM may have written into the scene body
   let cleanScene = stripStyleFragments(scenePrompt || '')
-  cleanScene = enforceHierarchySentence(cleanScene)
+  cleanScene = enforceSentence(cleanScene)
 
   if (!cleanScene) {
     const fallback = keywordsBlock || 'a central scene'
@@ -111,16 +86,19 @@ export function buildImagePrompt(input: PromptBuildInput): PromptBuildResult {
     }
   }
 
-  // Structure: `<style anchor>. <clean scene>. <full keywords block>. <quality>`
-  const styleAnchor = extractStyleAnchor(keywordsBlock)
+  // Structure: `<physical scene>. The style is <style keywords>.`
+  // Strip trailing periods from parts to avoid double-periods when joining
+  const styleBlock = keywordsBlock
+    ? `The style is ${keywordsBlock.replace(/\.+$/, '')}`
+    : ''
+
   const parts: string[] = []
+  if (cleanScene) parts.push(cleanScene.replace(/\.+$/, ''))
+  if (styleBlock) parts.push(styleBlock.replace(/\.+$/, ''))
+  if (promptQuality) parts.push(promptQuality.replace(/\.+$/, ''))
 
-  if (styleAnchor) parts.push(styleAnchor)
-  parts.push(cleanScene)
-  if (keywordsBlock) parts.push(keywordsBlock)
-  if (promptQuality) parts.push(promptQuality)
-
-  const prompt = parts.join('. ').replace(/\.\s*\./g, '.').trim()
+  // Join with space + period separator, ensure single trailing period
+  const prompt = (parts.join('. ') + '.').replace(/\.\.+/g, '.').trim()
 
   return { prompt, cleanScene }
 }
@@ -130,108 +108,94 @@ export function buildImagePrompt(input: PromptBuildInput): PromptBuildResult {
 export interface VideoPromptInput {
   /** The physical scene description (no style, no motion — just what the viewer sees) */
   physicalScene: string
-  /** Short style anchor extracted from art style (e.g. "Mike Mignola graphic novel illustration") */
-  styleAnchor: string
-  /** Full style keywords from art style (e.g. "Mike Mignola graphic novel illustration, heavy black ink linework...") */
+  /** Full style keywords from ArtStyle (e.g. "a dark, gritty creepy comic with heavy black ink outlines...") */
   styleKeywords: string
-  /** LLM-generated motion description (may contain embedded style header — will be stripped) */
+  /** LLM-generated motion description (pure physical motion, no style) */
   videoMotionPrompt: string
   /** Animation type from scene (e.g. "slow-scale-rotate", "cinematic-push") */
   animationType: string
 }
 
 /**
- * Build the final video prompt with strict 3-layer separation:
+ * Build the final video prompt. Three-part structure:
  *
- *   Layer 1: `<physical scene>` — no style, no motion
- *   Layer 2: `<style anchor> <style keywords>` — visual style definition
- *   Layer 3: Camera movement + subject action + environment motion
+ *   `<physical scene>. The style is <style keywords>. Camera movement: <cam>. Subject action: <subj>. Environment: <env>.`
  *
- * The videoMotionPrompt is stripped of any embedded style header (e.g.
- * "Creepy Comic — bold black ink linework camera push:...") since the style
- * block is already added as Layer 2.
- *
- * Camera terms are used ONLY in the motion layer, never mixed into the
- * physical scene description.
+ * The LLM outputs only the physical scene + physical motion.
+ * Style and motion labels are injected as separate blocks at the end.
  */
 export function buildVideoPrompt(input: VideoPromptInput): string {
-  const { physicalScene, styleAnchor, styleKeywords, videoMotionPrompt, animationType } = input
+  const { physicalScene, styleKeywords, videoMotionPrompt, animationType } = input
 
-  // Strip embedded style header from motion prompt (e.g. "Creepy Comic — slow zoom:...")
-  const motionText = stripMotionStyleHeader(videoMotionPrompt, styleAnchor)
+  // Clean the physical scene
+  const scene = enforceSentence(stripStyleFragments(physicalScene || ''))
 
-  // Layer 1: Physical scene
-  const scene = enforceSentence(physicalScene)
+  // Style block — strip trailing periods to avoid double-periods when joining
+  const styleBlock = styleKeywords
+    ? `The style is ${styleKeywords.replace(/\.+$/, '')}`
+    : ''
 
-  // Layer 2: Style block
-  const styleBlock = styleAnchor && styleKeywords
-    ? `${styleAnchor}. ${styleKeywords}`
-    : styleAnchor || styleKeywords || ''
-
-  // Layer 3: Camera + subject + environment
-  const motionBlock = buildMotionBlock(motionText, animationType)
+  // Motion block — structure it into Camera / Subject / Environment sections
+  const motionBlock = buildMotionBlock(videoMotionPrompt, animationType)
 
   const parts = [scene, styleBlock, motionBlock].filter(Boolean)
-  return parts.join(' ').trim()
+  const stripped = parts.map(p => p.replace(/\.+$/, ''))
+  return (stripped.join('. ') + '.').replace(/\.\.+/g, '.').trim()
 }
 
 /**
- * Strip the style header that the LLM prepends to videoMotionPrompt.
- *
- * "Creepy Comic — bold black ink linework camera push: the camera zooms..."
- *   → "the camera zooms..."  (when styleAnchor = "Creepy Comic illustration")
- *
- * Handles: "StyleName — motion:", "StyleName — motion:", "StyleName: motion:", etc.
- */
-function stripMotionStyleHeader(motionPrompt: string, styleAnchor: string): string {
-  let text = motionPrompt.trim()
-
-  if (!styleAnchor || !text) return text
-
-  // Build patterns to strip:
-  // 1. The style anchor followed by em-dash or colon + motion
-  // 2. The style name only (e.g. "Creepy Comic") followed by em-dash or colon
-  const styleName = styleAnchor.split(' ').slice(0, 2).join(' ') // first 2 words as shorthand
-
-  const patterns = [
-    new RegExp(`^${escapeRegex(styleAnchor)}[\\s—:–-]+`, 'i'),
-    new RegExp(`^${escapeRegex(styleName)}[\\s—:–-]+`, 'i'),
-  ]
-
-  for (const pattern of patterns) {
-    const before = text
-    text = text.replace(pattern, '').trim()
-    if (text !== before) break
-  }
-
-  return text || motionPrompt
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * Structure the motion text into three explicit sections:
- *   Camera: <movement description>
- *   Subject: <action description>
- *   Environment: <ambient motion>
- *
- * If the motion text is already structured, just label the sections.
+ * Structure the motion text into Camera / Subject / Environment sections.
+ * The LLM motion output is plain physical description — we label the sections.
  */
 function buildMotionBlock(motionText: string, animationType: string): string {
   if (!motionText) return ''
+
+  // If already structured, just clean and return
+  if (/\b(Camera movement|Subject action|Environment)\b/i.test(motionText)) {
+    return motionText.endsWith('.') ? motionText : motionText + '.'
+  }
+
+  // Split on common transition patterns to infer sections
+  const sentences = motionText.split(/(?<=[.!?])\s+/).filter(Boolean)
+
+  let camera = ''
+  let subject = ''
+  let environment = ''
+
+  const camIndicators = ['camera', 'zoom', 'pan', 'dolly', 'tilt', 'track', 'push', 'pull', 'slow']
+  const subjIndicators = ['her eyes', 'his eyes', 'their eyes', 'head turns', 'turns her', 'turns his', 'turns their', 'steps', 'backs', 'raises', 'drops', 'reaches', 'widen', 'sweat', 'trembles', 'shakes', 'mouth opens', 'voice']
+  const envIndicators = ['background', 'shelf', 'shelves', 'window', 'wind', 'dust', 'light', 'shadow', 'fog', 'room', 'wall', 'floor', 'ceiling', 'corner', 'door', 'tin soldiers', 'dolls']
+
+  for (const sent of sentences) {
+    const lower = sent.toLowerCase()
+    if (!camera && camIndicators.some(w => lower.includes(w))) {
+      camera = sent.trim()
+    } else if (!subject && subjIndicators.some(w => lower.includes(w))) {
+      subject = sent.trim()
+    } else if (!environment && envIndicators.some(w => lower.includes(w))) {
+      environment = sent.trim()
+    } else if (!subject) {
+      // Fallback: first unmatched sentence becomes subject
+      subject = sent.trim()
+    } else {
+      environment = sent.trim()
+    }
+  }
+
+  // Fallbacks
+  if (!camera) camera = sentences[0]?.trim() || ''
+  if (!subject && sentences.length > 1) subject = sentences[1]?.trim() || ''
+  if (!environment && sentences.length > 2) environment = sentences[2]?.trim() || ''
 
   const typeLabel = animationType
     ? animationType.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
     : 'Camera movement'
 
-  // Check if the motion text already has section labels
-  if (/\b(Camera|Subject|Environment|Focal|Action|Lighting)\b/i.test(motionText)) {
-    return motionText
-  }
+  const sections: string[] = []
+  if (camera) sections.push(`Camera (${typeLabel}): ${camera}`)
+  if (subject) sections.push(`Subject action: ${subject}`)
+  if (environment) sections.push(`Environment: ${environment}`)
 
-  // Otherwise structure it: try to split on " meanwhile ", " while ", " and " to infer sections
-  // Default: whole text as camera movement
-  return `Camera (${typeLabel}): ${motionText}`
+  return sections.join('. ') + '.'
 }
+
