@@ -63,7 +63,7 @@ export async function generateLightningVideo(
     seed = -1,
   } = options
 
-  const base = endpoint || DEFAULT_GRADIO_BASE
+  const base = (endpoint || DEFAULT_GRADIO_BASE).replace(/\/$/, "")
   const submitUrl = `${base}/gradio_api/call/generate`
 
   console.log(`[lightning] base=${base} submit_url=${submitUrl} prompt="${prompt.slice(0, 60)}..."`)
