@@ -7,6 +7,7 @@ export const maxDuration = 600 // 10 minutes max (Lightning can take a while)
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { generateLightningVideo, mapDuration } from '@/lib/videoService'
+import { buildVideoPrompt } from '@/lib/promptSanitizer'
 import path from "path"
 import { existsSync, mkdirSync } from "fs"
 
@@ -79,11 +80,21 @@ export async function POST(
       ? `${artStyle.name} illustration, ${artStyle.promptKeywords || artStyle.promptSuffix}`
       : ''
 
-    // ─── Enrich prompt with art style ────────────────────────────────────────
-    // Structure: "<style name> <style keywords>. <original videoMotionPrompt>"
-    const enrichedPrompt = styleLabel
-      ? `${styleLabel}. ${scene.videoMotionPrompt}`
-      : scene.videoMotionPrompt
+    // ─── Build the final video prompt with strict 3-layer separation ──────────
+    // Layer 1: physical scene (narration — ground truth)
+    // Layer 2: style anchor + keywords
+    // Layer 3: motion block (from videoMotionPrompt, style header stripped)
+    const styleAnchor = artStyle?.promptKeywords
+      ? artStyle.promptKeywords.split(',')[0]?.trim() || artStyle.name
+      : artStyle?.name || ''
+
+    const enrichedPrompt = buildVideoPrompt({
+      physicalScene: scene.narration,
+      styleAnchor,
+      styleKeywords: artStyle?.promptKeywords || artStyle?.promptSuffix || '',
+      videoMotionPrompt: scene.videoMotionPrompt || '',
+      animationType: scene.animationType || 'none',
+    })
 
     console.log(`[generate-video] scene=${sceneId} artStyle=${artStyle?.name || 'none'} prompt="${enrichedPrompt.slice(0, 80)}..."`)
 
