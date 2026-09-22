@@ -22,6 +22,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result })
   } catch (error: any) {
     console.error('[scenes/generate] error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // Return the raw content in the error for debugging
+    return NextResponse.json(
+      { error: error.message, detail: error.detail },
+      { status: 500 }
+    )
   }
 }

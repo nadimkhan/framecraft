@@ -71,7 +71,7 @@ function isValidAnimationType(v: string): v is AnimationType {
 }
 
 async function callLLM(prompt: string, systemPrompt: string): Promise<string | null> {
-  const result = await generateText(systemPrompt, prompt, { temperature: 0.8, maxTokens: 6000 })
+  const result = await generateText(systemPrompt, prompt, { temperature: 0.8, maxTokens: 6000, responseFormatJson: true })
   return result?.content || null
 }
 

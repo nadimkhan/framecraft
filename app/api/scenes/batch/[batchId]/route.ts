@@ -42,7 +42,7 @@ export async function GET(
               include: {
                 scenes: {
                   orderBy: { index: 'asc' },
-                  select: { id: true, index: true, narration: true, prompt: true, imagePath: true, audioPath: true, sceneVideoPath: true },
+                  select: { id: true, index: true, narration: true, prompt: true, animationType: true, videoMotionPrompt: true, imagePath: true, audioPath: true, sceneVideoPath: true },
                 },
               },
             },
