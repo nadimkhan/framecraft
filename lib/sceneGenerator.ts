@@ -230,11 +230,12 @@ For EACH scene, you must provide:
    ken-burns, spiral-zoom, pulse-breathe, drift-diagonal, focus-pull, orbit-light
    Pick based on the scene's emotional tone, pacing, and camera intent.
 
-2. "videoMotionPrompt": a 2-3 sentence description of HOW the image should animate, styled as ${artStyleName || 'the configured art style'}.
-   The art style is "${artStyleKeywords || artStyleSuffix || 'the series art style'}" — keep this consistent throughout all scenes.
+2. "videoMotionPrompt": 2-3 sentences describing HOW the image animates, with art style woven into the description.
+   Art style context: "${artStyleKeywords || artStyleSuffix || artStyleName || 'the configured art style'}"
+   — weave the style keywords naturally into the motion description throughout all scenes.
    Describe: camera movement, focal point shifts, what moves vs stays still,
-   and how motion creates emotional impact. Match the animationType you selected.
-   Example: "The camera slowly pushes in toward her face as the corridor behind her stretches into darkness. The doll in her hands remains perfectly still while the shadows on the wall ripple. The zoom intensifies the dread."
+   and how motion creates emotional impact in this art style. Match the animationType selected.
+   Example (Creepy Comic): "Creepy horror comic camera push: the camera zooms toward Milan's face as the toy shop shelves blur into halftone shadow. A dramatic ink-black shadow crawls across her skin while the cracked doll stays perfectly still. The zoom, rendered in bold black linework, amplifies her isolation in classic gothic panel style."
 
 Return ONLY valid JSON (no markdown, no preamble):
 ${jsonExample}
