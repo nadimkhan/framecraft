@@ -127,6 +127,7 @@ export async function generateScenesForTopic(
   const nicheCategory = series?.niche?.category
   const artStyleSuffix = series?.artStyle?.promptSuffix || ''
   const artStyleName = series?.artStyle?.name
+  const artStyleKeywords = series?.artStyle?.promptKeywords || ''
   const sceneStyles: any[] = (series as any)?.sceneStyles || []
 
   // ─── Ensure Video exists ────────────────────────────────────────────────
@@ -229,7 +230,8 @@ For EACH scene, you must provide:
    ken-burns, spiral-zoom, pulse-breathe, drift-diagonal, focus-pull, orbit-light
    Pick based on the scene's emotional tone, pacing, and camera intent.
 
-2. "videoMotionPrompt": a 2-3 sentence description of HOW the image should animate.
+2. "videoMotionPrompt": a 2-3 sentence description of HOW the image should animate, styled as ${artStyleName || 'the configured art style'}.
+   The art style is "${artStyleKeywords || artStyleSuffix || 'the series art style'}" — keep this consistent throughout all scenes.
    Describe: camera movement, focal point shifts, what moves vs stays still,
    and how motion creates emotional impact. Match the animationType you selected.
    Example: "The camera slowly pushes in toward her face as the corridor behind her stretches into darkness. The doll in her hands remains perfectly still while the shadows on the wall ripple. The zoom intensifies the dread."
@@ -239,7 +241,6 @@ ${jsonExample}
 - Each narration MUST be a CONTIGUOUS slice of the original story in order (no skipping, no reordering).
 - Every word of the original story must appear in exactly one scene's narration.
 - Each image prompt must follow the IMAGE PROMPT DESIGN framework above AND the SUBJECT ANCHORING RULE — depict exactly what the narration describes.
-- Do NOT include any art-style words, "photorealistic", "cinematic", "vivid", or other meta-instructions in the prompt — the style is applied automatically at image-generation time.
 - animationType MUST be one of the 17 exact values listed above — do not invent new ones.
 - videoMotionPrompt should describe actual motion, not just repeat the narration.`
 
