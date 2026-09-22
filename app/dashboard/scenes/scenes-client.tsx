@@ -116,6 +116,7 @@ export default function ScenesClient() {
   // Per-scene asset generation tracking
   const [generatingSceneImage, setGeneratingSceneImage] = useState<Set<number>>(new Set())
   const [generatingSceneAudio, setGeneratingSceneAudio] = useState<Set<number>>(new Set())
+  const [generatingSceneVideo, setGeneratingSceneVideo] = useState<Set<number>>(new Set())
   const [reprompting, setReprompting] = useState<Set<number>>(new Set())
   const [validating, setValidating] = useState<Set<number>>(new Set())
   // Scenes whose Image Prompt was just validated successfully. The check icon
@@ -495,6 +496,25 @@ export default function ScenesClient() {
       setError(e.message || 'Network error')
     } finally {
       setGeneratingSceneAudio(prev => {
+        const s = new Set(prev)
+        s.delete(scene.id)
+        return s
+      })
+    }
+  }
+
+  async function generateVideoForOneScene(topic: TopicInfo, scene: SceneInfo) {
+    setGeneratingSceneVideo(prev => new Set(prev).add(scene.id))
+    setError(null)
+    try {
+      const res = await fetch(`/api/scenes/${scene.id}/generate-video`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Video generation failed')
+      await refreshBatch()
+    } catch (e: any) {
+      setError(e.message || 'Network error')
+    } finally {
+      setGeneratingSceneVideo(prev => {
         const s = new Set(prev)
         s.delete(scene.id)
         return s
@@ -1259,6 +1279,30 @@ export default function ScenesClient() {
                                         >
                                           <Copy className="w-3 h-3" />
                                         </button>
+                                        {scene.sceneVideoPath ? (
+                                          <a
+                                            href={scene.sceneVideoPath}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-green-600 hover:text-green-500 transition-colors"
+                                            title="View generated video"
+                                          >
+                                            <VideoIcon className="w-3.5 h-3.5" />
+                                          </a>
+                                        ) : (
+                                          <button
+                                            onClick={() => generateVideoForOneScene(topic, scene)}
+                                            disabled={generatingSceneVideo.has(scene.id)}
+                                            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                                            title="Generate video from motion prompt"
+                                          >
+                                            {generatingSceneVideo.has(scene.id) ? (
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                              <Wand2 className="w-3.5 h-3.5" />
+                                            )}
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                     <p className="text-sm leading-relaxed bg-muted/50 p-3 rounded border text-muted-foreground">
