@@ -21,7 +21,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid scene id' }, { status: 400 })
     }
 
-    // ─── Load scene with topic + series ──────────────────────────────────────
+    // ─── Load scene with topic + series + art style ──────────────────────────
     const scene = await prisma.scene.findUnique({
       where: { id: sceneId },
       include: {
@@ -30,9 +30,14 @@ export async function POST(
             topic: {
               include: {
                 series: {
+                  include: {
+                    artStyle: true,
+                  },
                   select: {
-                    contentMode: true,
                     lightningEndpoint: true,
+                    contentMode: true,
+                    artStyleId: true,
+                    nicheId: true,
                   },
                 },
               },
@@ -50,23 +55,51 @@ export async function POST(
       return NextResponse.json({ error: 'No video motion prompt on this scene' }, { status: 400 })
     }
 
-    // ─── Determine aspect ratio from series contentMode ──────────────────────
     const series = scene.video.topic.series
-    const lightningEndpoint = series?.lightningEndpoint || undefined
-    const contentMode = series?.contentMode ?? 'long'
-    const aspectRatio = contentMode === 'shorts' ? '9:16' : '16:9'
+    if (!series) {
+      return NextResponse.json({ error: 'Series not found for scene' }, { status: 500 })
+    }
+    const lightningEndpoint = series.lightningEndpoint || undefined
 
-    // ─── Duration from audio duration (seconds) ──────────────────────────────
-    let targetDuration = 5 // default
+    // ─── Resolve art style: series override → niche default ───────────────────
+    // Niche.defaultArtStyleId is a column FK, not a relation field — fetch it directly
+    const niche = await prisma.niche.findUnique({
+      where: { id: series.nicheId },
+      select: { defaultArtStyleId: true },
+    })
+    const artStyleId = series.artStyleId ?? niche?.defaultArtStyleId
+    const artStyle = artStyleId
+      ? await prisma.artStyle.findUnique({
+          where: { id: artStyleId },
+          select: { name: true, promptSuffix: true, promptKeywords: true },
+        })
+      : null
+
+    const styleLabel = artStyle
+      ? `${artStyle.name} illustration, ${artStyle.promptKeywords || artStyle.promptSuffix}`
+      : ''
+
+    // ─── Enrich prompt with art style ────────────────────────────────────────
+    // Structure: "<style name> <style keywords>. <original videoMotionPrompt>"
+    const enrichedPrompt = styleLabel
+      ? `${styleLabel}. ${scene.videoMotionPrompt}`
+      : scene.videoMotionPrompt
+
+    console.log(`[generate-video] scene=${sceneId} artStyle=${artStyle?.name || 'none'} prompt="${enrichedPrompt.slice(0, 80)}..."`)
+
+    // ─── Duration from audio duration (seconds) ────────────────────────────────
+    let targetDuration = 5
     if (scene.audioPath) {
-      // TODO: read actual audio duration from file using sharp-audio-metadata or ffprobe
-      // For now, use a heuristic based on narration length
       const narrationLen = scene.narration.split(' ').length
       targetDuration = Math.max(2, Math.min(10, Math.round(narrationLen / 3)))
     }
     const duration = mapDuration(targetDuration)
 
-    // ─── Output folder: /public/generations/{topicTitle}/scene_{index}/ ─────
+    // ─── Aspect ratio from series contentMode ─────────────────────────────────
+    const contentMode = series.contentMode ?? 'long'
+    const aspectRatio = contentMode === 'shorts' ? '9:16' : '16:9'
+
+    // ─── Output folder ───────────────────────────────────────────────────────
     const topicTitle = scene.video.topic.title.replace(/[^a-zA-Z0-9_-]/g, '_')
     const sceneFolder = path.join(
       process.cwd(), 'public', 'generations',
@@ -76,14 +109,12 @@ export async function POST(
       mkdirSync(sceneFolder, { recursive: true })
     }
 
-    // ─── Call Lightning ──────────────────────────────────────────────────────
-    console.log(`[generate-video] scene=${sceneId} prompt="${scene.videoMotionPrompt.slice(0, 60)}..." duration=${duration} aspect=${aspectRatio}`)
-
+    // ─── Call Lightning ───────────────────────────────────────────────────────
     const result = await generateLightningVideo(
       {
-        prompt: scene.videoMotionPrompt,
+        prompt: enrichedPrompt,
         duration,
-        aspectRatio: aspectRatio as any,
+        aspectRatio: aspectRatio as "16:9" | "4:3" | "1:1" | "3:4" | "9:16",
         resolution: '720p',
         guideScale: 3,
         numSteps: 8,
@@ -94,7 +125,6 @@ export async function POST(
     )
 
     // ─── Update DB ──────────────────────────────────────────────────────────
-    // Convert local path to public URL path
     const publicVideoPath = result.videoPath.replace(process.cwd() + '/public', '')
     await prisma.scene.update({
       where: { id: sceneId },
@@ -110,6 +140,7 @@ export async function POST(
         : null,
       duration,
       aspectRatio,
+      artStyle: artStyle?.name ?? null,
     })
 
   } catch (error: any) {
